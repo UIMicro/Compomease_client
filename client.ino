@@ -69,8 +69,8 @@ const double high1k_value = 990.31;
 const double high100k_value = 98976;
 const double low1k_value = 997.35;
 const double low100k_value = 101668;
-const double baseSense_value = 10000;
-const double highSense_value = 1000;
+const double baseSense_value = 9972.1;
+const double highSense_value = 996.42;
 
 double highResistance;
 double lowResistance;
@@ -102,7 +102,7 @@ void initializePins() {
     pinMode(high100k, OUTPUT);
     pinMode(low100k, OUTPUT);
     pinMode(baseHigh, OUTPUT);
-    digitalWrite(baseHigh, LOW);
+    digitalWrite(baseHigh, HIGH);
 }
 
 #ifdef withDisplay
@@ -142,6 +142,8 @@ void setHighImpedance() {
     pinMode(collectorLow, INPUT);
     pinMode(baseInputL, INPUT);
     pinMode(baseInputH, INPUT);
+    pinMode(baseHigh, OUTPUT);
+    digitalWrite(baseHigh, HIGH);
     digitalWrite(high100k, HIGH);
     digitalWrite(low100k, LOW);
 }
@@ -338,6 +340,8 @@ void measurePNP() {
     pinMode(collectorLow, INPUT);
     pinMode(baseInputL, INPUT);
     pinMode(baseInputH, INPUT);
+    pinMode(baseHigh, OUTPUT);
+    digitalWrite(baseHigh, HIGH);
     digitalWrite(low1k, LOW);
     digitalWrite(highInput, HIGH);
 
@@ -348,7 +352,7 @@ void measurePNP() {
     }
 
     double collectorCurrent = repeatSample(lowInput, 512, 10) / low1k_value;
-    double baseCurrent = repeatSampleDifferential(baseInputH, baseInputL, 512, 10) / baseSense_value;
+    double baseCurrent = repeatSampleDifferential(baseInputL, baseInputH, 512, 10) / baseSense_value;
     double beta = collectorCurrent / baseCurrent;
 
     Serial.printf("beta: %lf\n", beta);
@@ -359,7 +363,56 @@ void measurePNP() {
 }
 
 void measureNPN() {
+    double beta;
 
+    //set pin mode to measure PNP   
+    pinMode(high1k, OUTPUT);
+    pinMode(low1k, INPUT);
+    pinMode(high100k, INPUT);
+    pinMode(low100k, INPUT);
+    pinMode(highInput, INPUT);
+    pinMode(lowInput, OUTPUT);
+    pinMode(collectorHigh, INPUT);
+    pinMode(collectorLow, INPUT);
+    pinMode(baseInputL, INPUT);
+    pinMode(baseInputH, INPUT);
+    pinMode(baseHigh, OUTPUT);
+    digitalWrite(baseHigh, HIGH);
+    digitalWrite(high1k, HIGH);
+    digitalWrite(lowInput, LOW);
+
+    tpl->setResistor(0);
+    while (repeatSample(lowInput, 16, 10) > 1.9 && tpl->currentResistor() < 250) {
+        delay(1);
+        tpl->setResistor(tpl->currentResistor() + 1);
+    }
+
+    double collectorCurrent = (Vcc - repeatSample(lowInput, 512, 10)) / low1k_value;
+    double baseCurrent = repeatSampleDifferential(baseInputH, baseInputL, 512, 10) / baseSense_value;
+    double beta = collectorCurrent / baseCurrent;
+
+    Serial.printf("beta: %lf\n", beta);
+
+    // perform curve measurement
+    pinMode(high1k, INPUT);
+    pinMode(collectorHigh, OUTPUT);
+    pinMode(collectorLow, OUTPUT);
+    digitalWrite(collectorLow, LOW);
+    digitalWrite(collectorHigh, HIGH);
+
+    const int curveNum = 4;
+    int curveCnt;
+
+    double* ibs = new double[curveNum];
+    double** ics = new double*[curveNum];
+
+    for (int i = 0; i < curveNum; ++i) {
+        ics[]
+    }
+
+    #ifdef withDisplay
+
+    #endif
 }
 
 componentType decideComponent() {
@@ -421,6 +474,7 @@ componentType decideComponent() {
 void setup() {
     // put your setup code here, to run once:
     initializePins();
+    initializePeripherals();
     delay(3000);
     Serial.println("Start detecting.");
 }
