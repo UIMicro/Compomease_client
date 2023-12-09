@@ -9,6 +9,12 @@
 #include <Adafruit_ST7789.h> // Hardware-specific library for ST7789
 #include <SPI.h>
 
+#include "X9C/X9C.h"
+#include "TPL0501/TPL0501.h"
+
+TPL0501* tpl = nullptr;
+X9C* x9c = nullptr;
+
 #define withDisplay
 
 #ifdef withDisplay
@@ -35,6 +41,8 @@
 #define high100k A0
 #define low1k A6
 #define low100k A7
+#define collectorHigh D0
+#define collectorLow D1
 
 // Digital Pin Configuration
 
@@ -43,7 +51,7 @@
 #define TPL0501_CS D6
 #define X9C_INC D3
 #define X9C_UD D2
-#define X9C_CS -1;
+#define X9C_CS -1
 
 #define MOS_Gate
 #define MOS_Source
@@ -97,6 +105,29 @@ void initializePins() {
     digitalWrite(baseHigh, LOW);
 }
 
+#ifdef withDisplay
+    void initializeDisplay() {
+        tft.init(240, 240);
+        tft.setSPISpeed(80000000);
+        tft.fillScreen(ST77XX_BLACK);
+
+        tft.setCursor(40, 90);
+        tft.setTextColor(ST77XX_WHITE);
+        tft.setTextSize(4);
+        tft.println("UIMicro");
+    }
+#endif
+
+void initializePeripherals() {
+    Serial.begin(230400);
+    #ifdef withDisplay
+        initializeDisplay();
+        currentMode = None;
+    #endif
+    tpl = new TPL0501(TPL0501_SCLK, TPL0501_DIN, TPL0501_CS);
+    x9c = new X9C(X9C_CS, -1, -1);
+}
+
 // enable weak pullup and pulldown resistor
 void setHighImpedance() {
     highResistance = high100k_value;
@@ -105,6 +136,12 @@ void setHighImpedance() {
     pinMode(low1k, INPUT);
     pinMode(high100k, OUTPUT);
     pinMode(low100k, OUTPUT);
+    pinMode(highInput, INPUT);
+    pinMode(lowInput, INPUT);
+    pinMode(collectorHigh, INPUT);
+    pinMode(collectorLow, INPUT);
+    pinMode(baseInputL, INPUT);
+    pinMode(baseInputH, INPUT);
     digitalWrite(high100k, HIGH);
     digitalWrite(low100k, LOW);
 }
@@ -117,6 +154,12 @@ void setLowImpedance() {
     pinMode(low1k, OUTPUT);
     pinMode(high100k, INPUT);
     pinMode(low100k, INPUT);
+    pinMode(highInput, INPUT);
+    pinMode(lowInput, INPUT);
+    pinMode(collectorHigh, INPUT);
+    pinMode(collectorLow, INPUT);
+    pinMode(baseInputL, INPUT);
+    pinMode(baseInputH, INPUT);
     digitalWrite(high1k, HIGH);
     digitalWrite(low1k, LOW);
 }
@@ -281,8 +324,43 @@ void measureResistor() {
     #endif
 }
 
-void measurePNP();
-void measureNPN();
+void measurePNP() {
+    double beta;
+
+    //set pin mode to measure PNP   
+    pinMode(high1k, INPUT);
+    pinMode(low1k, OUTPUT);
+    pinMode(high100k, INPUT);
+    pinMode(low100k, INPUT);
+    pinMode(highInput, OUTPUT);
+    pinMode(lowInput, INPUT);
+    pinMode(collectorHigh, INPUT);
+    pinMode(collectorLow, INPUT);
+    pinMode(baseInputL, INPUT);
+    pinMode(baseInputH, INPUT);
+    digitalWrite(low1k, LOW);
+    digitalWrite(highInput, HIGH);
+
+    tpl->setResistor(255);
+    while (repeatSample(lowInput, 16, 10) < 1.4 && tpl->currentResistor() > 5) {
+        delay(1);
+        tpl->setResistor(tpl->currentResistor() - 1);
+    }
+
+    double collectorCurrent = repeatSample(lowInput, 512, 10) / low1k_value;
+    double baseCurrent = repeatSampleDifferential(baseInputH, baseInputL, 512, 10) / baseSense_value;
+    double beta = collectorCurrent / baseCurrent;
+
+    Serial.printf("beta: %lf\n", beta);
+
+    #ifdef withDisplay
+
+    #endif
+}
+
+void measureNPN() {
+
+}
 
 componentType decideComponent() {
     // discharge component
@@ -340,27 +418,9 @@ componentType decideComponent() {
     }
 }
 
-#ifdef withDisplay
-    void initializeDisplay() {
-        tft.init(240, 240);
-        tft.setSPISpeed(80000000);
-        tft.fillScreen(ST77XX_BLACK);
-
-        tft.setCursor(40, 90);
-        tft.setTextColor(ST77XX_WHITE);
-        tft.setTextSize(4);
-        tft.println("UIMicro");
-    }
-#endif
-
 void setup() {
     // put your setup code here, to run once:
     initializePins();
-    Serial.begin(230400);
-    #ifdef withDisplay
-        initializeDisplay();
-        currentMode = None;
-    #endif
     delay(3000);
     Serial.println("Start detecting.");
 }
