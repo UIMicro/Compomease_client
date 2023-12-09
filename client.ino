@@ -13,25 +13,37 @@
 
 #ifdef withDisplay
 
-    #define TFT_CS        D7
-    #define TFT_RST       D5 // Or set to -1 and connect to Arduino RESET pin
-    #define TFT_DC        D6
-    #define TFT_MOSI      D4  // Data out
-    #define TFT_SCLK      D3  // Clock out
-    #define TFT_EN        D2
+    #define TFT_CS        D9
+    #define TFT_RST       D12 // Or set to -1 and connect to Arduino RESET pin
+    #define TFT_DC        D10
+    #define TFT_MOSI      D11  // Data out
+    #define TFT_SCLK      D13  // Clock out
 
     Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
 
 #endif
 
+// Analog Pin Configuration
+
 #define highInput A3
+#define highInputSense A1
 #define lowInput A5
-#define baseInput A4
+#define baseInputH A2
+#define baseInputL A4
 #define baseHigh A2
-#define high1k A1
+#define high1k D5
 #define high100k A0
 #define low1k A6
 #define low100k A7
+
+// Digital Pin Configuration
+
+#define TPL0501_DIN D8
+#define TPL0501_SCLK D7
+#define TPL0501_CS D6
+#define X9C_INC D3
+#define X9C_UD D2
+#define X9C_CS -1;
 
 #define MOS_Gate
 #define MOS_Source
@@ -49,6 +61,8 @@ const double high1k_value = 990.31;
 const double high100k_value = 98976;
 const double low1k_value = 997.35;
 const double low100k_value = 101668;
+const double baseSense_value = 10000;
+const double highSense_value = 1000;
 
 double highResistance;
 double lowResistance;
@@ -73,17 +87,14 @@ void initializePins() {
     analogSetAttenuation(ADC_11db);
     pinMode(highInput, INPUT);
     pinMode(lowInput, INPUT);
-    pinMode(baseInput, INPUT);
+    pinMode(baseInputH, INPUT);
+    pinMode(baseInputL, INPUT);
     pinMode(high1k, OUTPUT);
     pinMode(low1k, OUTPUT);
     pinMode(high100k, OUTPUT);
     pinMode(low100k, OUTPUT);
     pinMode(baseHigh, OUTPUT);
     digitalWrite(baseHigh, LOW);
-    #ifdef withDisplay
-        pinMode(TFT_EN, OUTPUT);
-        digitalWrite(TFT_EN, HIGH);
-    #endif
 }
 
 // enable weak pullup and pulldown resistor
@@ -270,6 +281,9 @@ void measureResistor() {
     #endif
 }
 
+void measurePNP();
+void measureNPN();
+
 componentType decideComponent() {
     // discharge component
     setZero();
@@ -288,7 +302,7 @@ componentType decideComponent() {
         double collectorFinalVoltage = repeatSample(highInput, 16, 0);
         double baseVoltage;
         if (collectorFinalVoltage - collectorInitialVoltage < -0.5) {
-            baseVoltage = repeatSample(baseInput, 16, 0);
+            baseVoltage = repeatSample(baseInputL, 16, 0);
             // Serial.printf("%lf, %lf, %lf", collectorInitialVoltage, collectorFinalVoltage, baseVoltage);
             if (baseVoltage > 1.5) {
                 return NMOS;
@@ -299,7 +313,7 @@ componentType decideComponent() {
         }
         if (collectorFinalVoltage - collectorInitialVoltage > 0.5) {
             digitalWrite(baseHigh, LOW);
-            baseVoltage = repeatSample(baseInput, 16, 0);
+            baseVoltage = repeatSample(baseInputL, 16, 0);
             if (baseVoltage < 1.5) {
                 return PMOS;
             }
@@ -371,9 +385,11 @@ void loop() {
         break;
     case PNP:
         Serial.println("PNP BJT detected.");
+        measurePNP();
         break;
     case NPN:
         Serial.println("NPN BJT detected.");
+        measureNPN();
         break;
     case PMOS:
         Serial.println("P-Channel MOSFET detected.");
