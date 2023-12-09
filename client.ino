@@ -401,18 +401,68 @@ void measureNPN() {
     digitalWrite(collectorHigh, HIGH);
 
     const int curveNum = 4;
-    int curveCnt;
 
     double* ibs = new double[curveNum];
     double** ics = new double*[curveNum];
+    double** uce = new double*[curveNum];
 
     for (int i = 0; i < curveNum; ++i) {
-        ics[]
+        ics[i] = new double[100];
+        uce[i] = new double[100];
+    }
+
+    x9c->setPos(99);
+    tpl->setResistor(255);
+
+    double startib;
+    //make sure the transistor don't saturate.
+    while (repeatSample(highInput, 16, 10) < 0.8 && tpl->currentResistor() > 10) {
+        tpl->setResistor(tpl->currentResistor() - 1);
+    }
+
+    startib = repeatSampleDifferential(baseInputH, baseInputL, 64, 10) / baseSense_value;
+
+    while (repeatSampleDifferential(baseInputH, baseInputL, 64, 10) / baseSense_value > startib / 3 && tpl->currentResistor() > 10) {
+        tpl->setResistor(tpl->currentResistor() - 1);
+    }
+
+    startib = repeatSampleDifferential(baseInputH, baseInputL, 64, 10) / baseSense_value;
+
+    for (int curveCnt = 0; curveCnt < curveNum; curveCnt++) {
+        Serial.printf("Measuring curve %d\n", curveCnt);
+        while ((baseInputH, baseInputL, 64, 10) / baseSense_value > startib / curveNum * (curveNum - curveCnt) && tpl->currentResistor() > 10) {
+            tpl->setResistor(tpl->currentResistor() - 1);
+        }
+
+        ibs[curveCnt] = repeatSampleDifferential(baseInputH, baseInputL, 64, 10) / baseSense_value;
+
+        for (int16_t i = 0; i < 100; ++i) {
+            x9c->setPos(i);
+            ics[curveCnt][i] = repeatSampleDifferential(highInputSense, highInput, 64, 10);
+            uce[curveCnt][i] = repeatSample(highInput, 64, 10);
+        }
+    }
+
+    Serial.printf("Measurement Complete.\n");
+
+    for (int curveCnt = 0; curveCnt < curveNum; curveCnt++) {
+        Serial.printf("Curve %d: ib = %lf\n", curveCnt, ibs[curveCnt]);
+        for (int i = 0; i < 100; ++i) {
+            Serial.printf("ic: %lf, uce: %lf", ics[curveCnt][i], uce[curveCnt][i]);
+        }
     }
 
     #ifdef withDisplay
 
     #endif
+
+    delete[] ibs;
+    for (int i = 0; i < curveNum; ++i) {
+        delete[] ics[i];
+        delete[] uce[i];
+    }
+    delete[] ics;
+    delete[] uce;
 }
 
 componentType decideComponent() {
