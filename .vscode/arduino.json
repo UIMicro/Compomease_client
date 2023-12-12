@@ -3,5 +3,5 @@
     "configuration": "PartitionScheme=default,PinNumbers=default,USBMode=default",
     "port": "COM5",
     "sketch": "client.ino",
-    "output": "../output"
+    "output": "../client_output"
 }

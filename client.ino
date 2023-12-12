@@ -9,11 +9,10 @@
 #include <Adafruit_ST7789.h> // Hardware-specific library for ST7789
 #include <SPI.h>
 
-#include "X9C/X9C.h"
-#include "TPL0501/TPL0501.h"
+#include "X9C.h"
 
-TPL0501* tpl = nullptr;
-X9C* x9c = nullptr;
+X9C* resB = nullptr;
+X9C* resC = nullptr;
 
 #define withDisplay
 
@@ -36,8 +35,8 @@ X9C* x9c = nullptr;
 #define lowInput A5
 #define baseInputH A2
 #define baseInputL A4
-#define baseHigh A2
-#define high1k D5
+#define baseHigh D3
+#define high1k D4
 #define high100k A0
 #define low1k A6
 #define low100k A7
@@ -46,18 +45,16 @@ X9C* x9c = nullptr;
 
 // Digital Pin Configuration
 
-#define TPL0501_DIN D8
-#define TPL0501_SCLK D7
-#define TPL0501_CS D6
 #define X9C_INC D3
 #define X9C_UD D2
-#define X9C_CS -1
+#define X9C_CSb D5
+#define X9C_CSc D6
 
 #define MOS_Gate
 #define MOS_Source
 #define MOS_Drain
 
-const bool debug = false;
+const bool debug = true;
 
 const size_t adc_buffer_size = 4096;
 int adc_buffer[adc_buffer_size];
@@ -124,8 +121,8 @@ void initializePeripherals() {
         initializeDisplay();
         currentMode = None;
     #endif
-    tpl = new TPL0501(TPL0501_SCLK, TPL0501_DIN, TPL0501_CS);
-    x9c = new X9C(X9C_CS, -1, -1);
+    resB = new X9C(X9C_CSb, X9C_INC, X9C_UD);
+    resC = new X9C(X9C_CSc, X9C_INC, X9C_UD);
 }
 
 // enable weak pullup and pulldown resistor
@@ -143,7 +140,7 @@ void setHighImpedance() {
     pinMode(baseInputL, INPUT);
     pinMode(baseInputH, INPUT);
     pinMode(baseHigh, OUTPUT);
-    digitalWrite(baseHigh, HIGH);
+    digitalWrite(baseHigh, LOW);
     digitalWrite(high100k, HIGH);
     digitalWrite(low100k, LOW);
 }
@@ -345,15 +342,15 @@ void measurePNP() {
     digitalWrite(low1k, LOW);
     digitalWrite(highInput, HIGH);
 
-    tpl->setResistor(255);
-    while (repeatSample(lowInput, 16, 10) < 1.4 && tpl->currentResistor() > 5) {
+    resB->setPos(X9C::MAX);
+    while (repeatSample(lowInput, 16, 10) < 1.4 && resB->getPos() > 5) {
         delay(1);
-        tpl->setResistor(tpl->currentResistor() - 1);
+        resB->setPos(resB->getPos() - 1);
     }
 
     double collectorCurrent = repeatSample(lowInput, 512, 10) / low1k_value;
     double baseCurrent = repeatSampleDifferential(baseInputL, baseInputH, 512, 10) / baseSense_value;
-    double beta = collectorCurrent / baseCurrent;
+    beta = collectorCurrent / baseCurrent;
 
     Serial.printf("beta: %lf\n", beta);
 
@@ -381,15 +378,22 @@ void measureNPN() {
     digitalWrite(high1k, HIGH);
     digitalWrite(lowInput, LOW);
 
-    tpl->setResistor(0);
-    while (repeatSample(lowInput, 16, 10) > 1.9 && tpl->currentResistor() < 250) {
+
+    resB->setPos(X9C::MAX);
+    while (repeatSample(lowInput, 16, 10) < 2.1 && resB->getPos() > 5) {
         delay(1);
-        tpl->setResistor(tpl->currentResistor() + 1);
+        resB->setPos(resB->getPos() - 1);
+    }
+
+    if (debug) {
+        Serial.printf("base resistor: %d\n", resB->getPos());
+        while (!Serial.available());
+        Serial.read();
     }
 
     double collectorCurrent = (Vcc - repeatSample(lowInput, 512, 10)) / low1k_value;
     double baseCurrent = repeatSampleDifferential(baseInputH, baseInputL, 512, 10) / baseSense_value;
-    double beta = collectorCurrent / baseCurrent;
+    beta = collectorCurrent / baseCurrent;
 
     Serial.printf("beta: %lf\n", beta);
 
@@ -411,34 +415,40 @@ void measureNPN() {
         uce[i] = new double[100];
     }
 
-    x9c->setPos(99);
-    tpl->setResistor(255);
+    resC->setPos(X9C::MAX);
+    resB->setPos(X9C::MAX);
 
     double startib;
     //make sure the transistor don't saturate.
-    while (repeatSample(highInput, 16, 10) < 0.8 && tpl->currentResistor() > 10) {
-        tpl->setResistor(tpl->currentResistor() - 1);
+    while (repeatSample(highInput, 16, 10) < 2 && resB->getPos() > 5) {
+        resB->setPos(resB->getPos() - 1);
+    }
+
+    if (debug) {
+        Serial.printf("base resistor: %d\n", resB->getPos());
+        while (!Serial.available());
+        Serial.read();
     }
 
     startib = repeatSampleDifferential(baseInputH, baseInputL, 64, 10) / baseSense_value;
 
-    while (repeatSampleDifferential(baseInputH, baseInputL, 64, 10) / baseSense_value > startib / 3 && tpl->currentResistor() > 10) {
-        tpl->setResistor(tpl->currentResistor() - 1);
-    }
+    // while (repeatSampleDifferential(baseInputH, baseInputL, 64, 10) / baseSense_value > startib / 3 && resB->getPos() > 10) {
+    //     resB->setPos(resB->getPos() - 1);
+    // }
 
-    startib = repeatSampleDifferential(baseInputH, baseInputL, 64, 10) / baseSense_value;
+    // startib = repeatSampleDifferential(baseInputH, baseInputL, 64, 10) / baseSense_value;
 
     for (int curveCnt = 0; curveCnt < curveNum; curveCnt++) {
         Serial.printf("Measuring curve %d\n", curveCnt);
-        while ((baseInputH, baseInputL, 64, 10) / baseSense_value > startib / curveNum * (curveNum - curveCnt) && tpl->currentResistor() > 10) {
-            tpl->setResistor(tpl->currentResistor() - 1);
+        while ((baseInputH, baseInputL, 64, 10) / baseSense_value > startib / curveNum * (curveNum - curveCnt) && resB->getPos() > 10) {
+            resB->setPos(resB->getPos() - 1);
         }
 
         ibs[curveCnt] = repeatSampleDifferential(baseInputH, baseInputL, 64, 10) / baseSense_value;
 
-        for (int16_t i = 0; i < 100; ++i) {
-            x9c->setPos(i);
-            ics[curveCnt][i] = repeatSampleDifferential(highInputSense, highInput, 64, 10);
+        for (auto i = X9C::MIN; i <= X9C::MAX; ++i) {
+            resC->setPos(i);
+            ics[curveCnt][i] = repeatSampleDifferential(highInputSense, highInput, 64, 10) / highSense_value;
             uce[curveCnt][i] = repeatSample(highInput, 64, 10);
         }
     }
@@ -447,13 +457,16 @@ void measureNPN() {
 
     for (int curveCnt = 0; curveCnt < curveNum; curveCnt++) {
         Serial.printf("Curve %d: ib = %lf\n", curveCnt, ibs[curveCnt]);
-        for (int i = 0; i < 100; ++i) {
+        for (int i = X9C::MIN; i <= X9C::MAX; ++i) {
             Serial.printf("ic: %lf, uce: %lf", ics[curveCnt][i], uce[curveCnt][i]);
         }
     }
 
     #ifdef withDisplay
-
+        tft.fillScreen(ST77XX_BLACK);
+        tft.setTextSize(1);
+        tft.setCursor(105, 10);
+        tft.printf("ib: %.*guA", 4, ibs[0] * 1000000);
     #endif
 
     delete[] ibs;
@@ -472,9 +485,22 @@ componentType decideComponent() {
     
     double transientVoltage, finalVoltage;
     setHighImpedance();
-    transientVoltage = repeatSample(highInput, 16, 0);
+    
+    if (debug) {
+        Serial.printf("fuck");
+        //while (!Serial.available());
+        //Serial.read();
+    }
+    transientVoltage = repeatSampleDifferential(highInput, lowInput, 16, 0);
     delay(200);
-    finalVoltage = repeatSample(highInput, 16, 0);
+    finalVoltage = repeatSampleDifferential(highInput, lowInput, 16, 0);
+
+    if (debug) {
+        Serial.printf("transientVoltage, %lf, finalVoltage, %lf", transientVoltage, finalVoltage);
+        //while (!Serial.available());
+        //Serial.read();
+    }
+
     if (transientVoltage - finalVoltage  < 0.08 && transientVoltage - finalVoltage > -0.08) {
         // BJT
         double collectorInitialVoltage = repeatSample(highInput, 16, 0);
@@ -482,10 +508,15 @@ componentType decideComponent() {
         delay(10);
         double collectorFinalVoltage = repeatSample(highInput, 16, 0);
         double baseVoltage;
+        if (debug) {
+            Serial.printf("%lf, %lf, %lf", collectorInitialVoltage, collectorFinalVoltage, baseVoltage);
+        }
         if (collectorFinalVoltage - collectorInitialVoltage < -0.5) {
             baseVoltage = repeatSample(baseInputL, 16, 0);
-            // Serial.printf("%lf, %lf, %lf", collectorInitialVoltage, collectorFinalVoltage, baseVoltage);
-            if (baseVoltage > 1.5) {
+            if (debug) {
+                Serial.printf("%lf, %lf, %lf", collectorInitialVoltage, collectorFinalVoltage, baseVoltage);
+            }
+            if (repeatSampleDifferential(baseInputL, lowInput, 16, 10) > 1.5) {
                 return NMOS;
             }
             else {
@@ -494,8 +525,7 @@ componentType decideComponent() {
         }
         if (collectorFinalVoltage - collectorInitialVoltage > 0.5) {
             digitalWrite(baseHigh, LOW);
-            baseVoltage = repeatSample(baseInputL, 16, 0);
-            if (baseVoltage < 1.5) {
+            if (repeatSampleDifferential(highInput, baseInputL, 16, 10) < 1.5) {
                 return PMOS;
             }
             else {
@@ -553,6 +583,7 @@ void loop() {
         break;
     case NPN:
         Serial.println("NPN BJT detected.");
+        while (decideComponent() == NPN);
         measureNPN();
         break;
     case PMOS:
@@ -568,6 +599,8 @@ void loop() {
         break;
     }
 
+    delay(100);
+
     // wait until component is connected
     setHighImpedance();
     double highVoltage = repeatSample(highInput, 16, 0);
@@ -580,7 +613,7 @@ void loop() {
         tempVoltage = repeatSample(highInput, 16, 10);
 
         #ifdef withDisplay
-            if (currentMode != None) {
+            if (currentMode != None && currentMode != NPN) {
                 currentMode = None;
                 tft.fillScreen(ST77XX_BLACK);
 
@@ -589,9 +622,11 @@ void loop() {
                 tft.setTextSize(3);
                 tft.printf("NO LOAD.");
             }
+            else {
+                currentMode = None;
+            }
         #endif
     }
     delay(500);
 
-    
 }
