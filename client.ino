@@ -404,8 +404,6 @@ void measureNPN() {
     beta = collectorCurrent / baseCurrent;
 
     Serial.printf("beta: %lf\n", beta);
-    Serial.printf("baseCurrent: %lf", baseCurrent);
-    Serial.printf("cCurrent: %lf", collectorCurrent);
 
     // perform curve measurement
     pinMode(high1k, INPUT);
@@ -414,7 +412,7 @@ void measureNPN() {
     digitalWrite(collectorLow, LOW);
     digitalWrite(collectorHigh, HIGH);
 
-    const int curveNum = 4;
+    const int curveNum = 5;
 
     double* ibs = new double[curveNum];
     double** ics = new double*[curveNum];
@@ -430,7 +428,7 @@ void measureNPN() {
 
     double startib;
     //make sure the transistor don't saturate.
-    while (repeatSample(highInput, 16, 10) < 2 && resB->getPos() > 5) {
+    while (repeatSample(highInput, 16, 10) < 2.5 && resB->getPos() > 5) {
         resB->setPos(resB->getPos() - 1);
     }
 
@@ -454,14 +452,14 @@ void measureNPN() {
             resB->setPos(resB->getPos() - 1);
         }
 
-        ibs[curveCnt] = repeatSampleDifferential(baseInputH, baseInputL, 64, 10) / baseSense_value;
+        ibs[curveCnt] = repeatSampleDifferential(baseInputH, baseInputL, 256, 1) / baseSense_value;
         if (debug) {
         Serial.printf("pos: %d, IBS%d: %lfuA\n", resB->getPos(),curveCnt, ibs[curveCnt] * 1000000);
         }
         for (auto i = X9C::MIN; i <= X9C::MAX; ++i) {
             resC->setPos(i);
-            ics[curveCnt][i] = repeatSampleDifferential(highInputSense, highInput, 64, 10) / highSense_value;
-            uce[curveCnt][i] = repeatSample(highInput, 64, 10);
+            ics[curveCnt][i] = repeatSampleDifferential(highInputSense, highInput, 256, 1) / highSense_value;
+            uce[curveCnt][i] = repeatSampleDifferential(highInput, low100k, 256, 1);
         }
     }
 
@@ -475,19 +473,76 @@ void measureNPN() {
     }
 
     #ifdef withDisplay
+        int x1, x2, y1, y2;
         tft.fillScreen(ST77XX_BLACK);
         tft.setTextSize(1);
         tft.setCursor(105, 10);
-        tft.printf("ib: %.*guA", 4, ibs[0] * 1000000);
-        int x1, x2, y1, y2;
+        tft.drawLine(10, 230, 230, 230, ST77XX_WHITE);
+        tft.drawLine(10, 10, 10, 230, ST77XX_WHITE);
+        tft.drawLine(6, 14, 10, 10, ST77XX_WHITE);
+        tft.drawLine(10, 10, 14, 14, ST77XX_WHITE);
+        tft.drawLine(226, 226, 230, 230, ST77XX_WHITE);
+        tft.drawLine(226, 234, 230, 230, ST77XX_WHITE);
+        //tft.printf("ib: %.*guA", 4, ibs[0] * 1000000);
+        double max_uce = 0, max_ics = 0;
         for (int i = 0; i < curveNum; ++i) {
-          for (int j = 0; j < 90; ++j) {
-            x1 = (int)(10.0 + uce[i][j] * 80.0);
-            x2 = (int)(10.0 + uce[i][j + 1] * 80.0);
-            y1 = (int)(230.0 - ics[i][j] * 150000.0);
-            y2 = (int)(230.0 - ics[i][j + 1] * 150000.0);
+          for (int j = 0; j <= 90; ++j) {
+            if (uce[i][j] > max_uce)  max_uce = uce[i][j];
+            if (ics[i][j] > max_ics)  max_ics = ics[i][j];
+          }
+        }
+        double amp_uce = 220.0 / max_uce;
+        double amp_ics = 220.0 / max_ics;
+        //axis
+        for (double ic = 0; ic < max_ics; ic += 0.1 / 1000) {
+          if (((ic * 2000) - (int)(ic * 2000)) < 0.0001) {
+            x1 = 6;
+            x2 = 14;        
+          }
+          else {
+            x1 = 8;
+            x2 = 12;        
+          }
+            y1 = (int)(230.0 - ic * amp_ics);
+            y2 = (int)(230.0 - ic * amp_ics);
+
             Serial.printf("(%d, %d), (%d, %d)\n", x1, y1, x2, y2);
             tft.drawLine(x1, y1, x2, y2, ST77XX_WHITE);
+        }
+        
+        for (double u = 0; u < max_uce; u += 0.5) {
+          if ((u - (int)(u)) < 0.1) {
+            y1 = 226;
+            y2 = 234;
+          }
+          else {
+            
+            y1 = 228;
+            y2 = 232;
+          }
+            
+            x1 = (int)(10.0 + u * amp_uce);
+            x2 = (int)(10.0 + u * amp_uce);
+            Serial.printf("(%d, %d), (%d, %d)\n", x1, y1, x2, y2);
+            tft.drawLine(x1, y1, x2, y2, ST77XX_WHITE);
+        }
+
+        for (int i = 0; i < curveNum; ++i) {
+          for (int j = 0; j < 90; ++j) {
+            x1 = (int)(10.0 + uce[i][j] * amp_uce);
+            x2 = (int)(10.0 + uce[i][j + 1] * amp_uce);
+            y1 = (int)(230.0 - ics[i][j] * amp_ics);
+            y2 = (int)(230.0 - ics[i][j + 1] * amp_ics);
+            //Serial.printf("(%d, %d), (%d, %d)\n", x1, y1, x2, y2);
+            tft.drawLine(x1, y1, x2, y2, ST77XX_WHITE);
+            if (j == 89) {
+                x2 -= 64;
+                y2 += 10;
+                tft.setTextSize(1);
+                tft.setCursor(x2, y2);
+                tft.setTextColor(ST77XX_GREEN);
+                tft.printf("ib: %.*guA", 4, ibs[i] * 1000000);
+            }
           }
         }
     #endif
