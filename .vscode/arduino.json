@@ -1,7 +1,5 @@
 {
-    "board": "arduino:esp32:nano_nora",
     "configuration": "PartitionScheme=default,PinNumbers=default,USBMode=default",
-    "port": "COM5",
-    "sketch": "client.ino",
-    "output": "../client_output"
+    "board": "arduino:esp32:nano_nora",
+    "sketch": "client.ino"
 }
