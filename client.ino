@@ -10,6 +10,7 @@
 #include <SPI.h>
 
 #include "X9C.h"
+#include "bitmaps.h"
 
 X9C* resB = nullptr;
 X9C* resC = nullptr;
@@ -17,14 +18,15 @@ X9C* resC = nullptr;
 #define withDisplay
 
 #ifdef withDisplay
-
+    #define ALTERNATE_PINS
     #define TFT_CS        D1
     #define TFT_RST       D2 // Or set to -1 and connect to Arduino RESET pin
     #define TFT_DC        D0
     #define TFT_MOSI      D11  // Data out
     #define TFT_SCLK      D13  // Clock out
 
-    Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
+    SPIClass* hspi = nullptr;
+    Adafruit_ST7789* tft = nullptr;
 
 #endif
 
@@ -104,14 +106,19 @@ void initializePins() {
 
 #ifdef withDisplay
     void initializeDisplay() {
-        tft.init(240, 240);
-        tft.setSPISpeed(80000000);
-        tft.fillScreen(ST77XX_BLACK);
+        hspi = new SPIClass(HSPI);
+        hspi->begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
+        tft = new Adafruit_ST7789(hspi, TFT_CS, TFT_DC, TFT_RST);
+        tft->init(240, 240);
+        hspi->setFrequency(80000000);
+        tft->setSPISpeed(80000000);
+        //tft->fillScreen(ST77XX_BLACK);
 
-        tft.setCursor(40, 90);
-        tft.setTextColor(ST77XX_WHITE);
-        tft.setTextSize(4);
-        tft.println("UIMicro");
+        // tft->setCursor(40, 90);
+        // tft->setTextColor(ST77XX_WHITE);
+        // tft->setTextSize(4);
+        // tft->println("UIMicro");
+        tft->drawRGBBitmap(0, 0, (const uint16_t*)gImage_uimicro_text, 240, 240);
     }
 #endif
 
@@ -249,25 +256,25 @@ void measureCapacitor() {
     #ifdef withDisplay
         if (currentMode != Capacitor) {
             currentMode = Capacitor;
-            tft.fillScreen(ST77XX_BLACK);
+            tft->fillScreen(ST77XX_BLACK);
 
-            tft.setCursor(50, 60);
-            tft.setTextColor(ST77XX_WHITE);
-            tft.setTextSize(3);
-            tft.printf("Capacitor");
+            tft->setCursor(50, 60);
+            tft->setTextColor(ST77XX_WHITE);
+            tft->setTextSize(3);
+            tft->printf("Capacitor");
 
         }
         else {
-            tft.fillRect(0, 110, 240, 40, ST77XX_BLACK);
+            tft->fillRect(0, 110, 240, 40, ST77XX_BLACK);
         }
 
         if (capacitance > 1) {
-            tft.setCursor(40, 110);
-            tft.printf("%.*g uF", 4, capacitance);
+            tft->setCursor(40, 110);
+            tft->printf("%.*g uF", 4, capacitance);
         }
         else {
-            tft.setCursor(40, 110);
-            tft.printf("%.*g nF", 4, capacitance * 1e3);
+            tft->setCursor(40, 110);
+            tft->printf("%.*g nF", 4, capacitance * 1e3);
         }
     #endif
 
@@ -302,25 +309,25 @@ void measureResistor() {
     #ifdef withDisplay
         if (currentMode != Resistor) {
             currentMode = Resistor;
-            tft.fillScreen(ST77XX_BLACK);
+            tft->fillScreen(ST77XX_BLACK);
 
-            tft.setCursor(50, 60);
-            tft.setTextColor(ST77XX_WHITE);
-            tft.setTextSize(3);
-            tft.printf("Resistor");
+            tft->setCursor(50, 60);
+            tft->setTextColor(ST77XX_WHITE);
+            tft->setTextSize(3);
+            tft->printf("Resistor");
 
         }
         else {
-            tft.fillRect(0, 110, 240, 40, ST77XX_BLACK);
+            tft->fillRect(0, 110, 240, 40, ST77XX_BLACK);
         }
 
         if (resistance > 1000) {
-            tft.setCursor(20, 110);
-            tft.printf("%.*g kOhms", 4, resistance / 1000);
+            tft->setCursor(20, 110);
+            tft->printf("%.*g kOhms", 4, resistance / 1000);
         }
         else {
-            tft.setCursor(30, 110);
-            tft.printf("%4.*g Ohms", resistance);
+            tft->setCursor(30, 110);
+            tft->printf("%4.*g Ohms", resistance);
         }
 
     #endif
@@ -392,18 +399,37 @@ void measureNPN() {
 
 
     resB->setPos(X9C::MAX);
-    Serial.println(repeatSample(highInput, 16, 10));
-    Serial.println(resB->getPos());
     while (repeatSample(highInput, 16, 10) < 2.1 && resB->getPos() > 5) {
         delay(1);
         resB->setPos(resB->getPos() - 1);
     }
 
+    if (resB->getPos() == 5 || resB->getPos() == X9C::MAX) {
+      tft->drawRGBBitmap(0, 0, (const uint16_t*)gImage_syh, 240, 240);
+      return;
+    }
     double collectorCurrent = (Vcc - repeatSample(highInput, 512, 10)) / low1k_value;
     double baseCurrent = repeatSampleDifferential(baseInputH, baseInputL, 512, 10) / baseSense_value;
     beta = collectorCurrent / baseCurrent;
 
     Serial.printf("beta: %lf\n", beta);
+
+    #ifdef withDisplay
+            currentMode = NPN;
+        tft->fillScreen(ST77XX_BLACK);
+            tft->setCursor(60, 60);
+            tft->setTextColor(ST77XX_WHITE);
+            tft->setTextSize(3);
+            tft->printf("NPN BJT");
+        const uint16_t bar_x = 10, bar_y = 164, bar_w = 140, bar_h = 20;
+        tft->setCursor(34, 100);
+        tft->printf("beta:%.*g", 4, beta);
+            tft->setTextSize(2);
+            tft->setCursor(30, 140);
+            tft->printf("Measuring curve");
+            tft->fillRect(bar_x, bar_y, bar_w, bar_h, ST77XX_WHITE);
+            tft->fillRect(bar_x + 4, bar_y + 4, bar_w - 8, bar_h - 8, ST77XX_BLACK);
+    #endif
 
     // perform curve measurement
     pinMode(high1k, INPUT);
@@ -432,6 +458,11 @@ void measureNPN() {
         resB->setPos(resB->getPos() - 1);
     }
 
+    if (resB->getPos() == 5 || resB->getPos() == X9C::MAX) {
+      tft->drawRGBBitmap(0, 0, (const uint16_t*)gImage_syh, 240, 240);
+      return;
+    }
+
     if (debug) {
         Serial.printf("base resistor: %d\n", resB->getPos());
     }
@@ -451,15 +482,26 @@ void measureNPN() {
         while (repeatSampleDifferential(baseInputH, baseInputL, 64, 10) / baseSense_value > startib / curveNum * (curveNum - curveCnt) && resB->getPos() > 10) {
             resB->setPos(resB->getPos() - 1);
         }
-
         ibs[curveCnt] = repeatSampleDifferential(baseInputH, baseInputL, 256, 1) / baseSense_value;
         if (debug) {
-        Serial.printf("pos: %d, IBS%d: %lfuA\n", resB->getPos(),curveCnt, ibs[curveCnt] * 1000000);
+          Serial.printf("pos: %d, IBS%d: %lfuA\n", resB->getPos(),curveCnt, ibs[curveCnt] * 1000000);
         }
+        double finishRatio;
         for (auto i = X9C::MIN; i <= X9C::MAX; ++i) {
             resC->setPos(i);
             ics[curveCnt][i] = repeatSampleDifferential(highInputSense, highInput, 256, 1) / highSense_value;
             uce[curveCnt][i] = repeatSampleDifferential(highInput, low100k, 256, 1);
+            #ifdef withDisplay
+            finishRatio = (i + 1.0 * curveCnt * X9C::MAX) / (1.0 * curveNum * X9C::MAX);
+              if (i % 3 == 0) {
+                
+            
+            tft->setCursor(160, 168);
+            tft->fillRect(160, 168, 80, 20, ST77XX_BLACK);
+            tft->printf("%.3g%%", finishRatio * 100.0);
+              }
+            tft->fillRect(bar_x + 6, bar_y + 6, (uint16_t)(finishRatio * (bar_w - 12.0)), bar_h - 12, ST77XX_WHITE);
+            #endif
         }
     }
 
@@ -474,16 +516,17 @@ void measureNPN() {
 
     #ifdef withDisplay
         int x1, x2, y1, y2;
-        tft.fillScreen(ST77XX_BLACK);
-        tft.setTextSize(1);
-        tft.setCursor(105, 10);
-        tft.drawLine(10, 230, 230, 230, ST77XX_WHITE);
-        tft.drawLine(10, 10, 10, 230, ST77XX_WHITE);
-        tft.drawLine(6, 14, 10, 10, ST77XX_WHITE);
-        tft.drawLine(10, 10, 14, 14, ST77XX_WHITE);
-        tft.drawLine(226, 226, 230, 230, ST77XX_WHITE);
-        tft.drawLine(226, 234, 230, 230, ST77XX_WHITE);
-        //tft.printf("ib: %.*guA", 4, ibs[0] * 1000000);
+
+        // draw axis
+        tft->fillScreen(ST77XX_BLACK);
+        tft->drawLine(10, 230, 230, 230, ST77XX_WHITE);
+        tft->drawLine(10, 10, 10, 230, ST77XX_WHITE);
+        tft->drawLine(6, 14, 10, 10, ST77XX_WHITE);
+        tft->drawLine(10, 10, 14, 14, ST77XX_WHITE);
+        tft->drawLine(226, 226, 230, 230, ST77XX_WHITE);
+        tft->drawLine(226, 234, 230, 230, ST77XX_WHITE);
+        
+        uint16_t color;
         double max_uce = 0, max_ics = 0;
         for (int i = 0; i < curveNum; ++i) {
           for (int j = 0; j <= 90; ++j) {
@@ -497,36 +540,41 @@ void measureNPN() {
         for (double ic = 0; ic < max_ics; ic += 0.1 / 1000) {
           if (((ic * 2000) - (int)(ic * 2000)) < 0.0001) {
             x1 = 6;
-            x2 = 14;        
+            x2 = 14;
+            color = ST77XX_WHITE;     
           }
           else {
             x1 = 8;
-            x2 = 12;        
+            x2 = 12;    
+            color = ST77XX_RED;         
           }
             y1 = (int)(230.0 - ic * amp_ics);
             y2 = (int)(230.0 - ic * amp_ics);
 
-            Serial.printf("(%d, %d), (%d, %d)\n", x1, y1, x2, y2);
-            tft.drawLine(x1, y1, x2, y2, ST77XX_WHITE);
+            //Serial.printf("(%d, %d), (%d, %d)\n", x1, y1, x2, y2);
+            tft->drawLine(x1, y1, x2, y2, color);
         }
         
         for (double u = 0; u < max_uce; u += 0.5) {
           if ((u - (int)(u)) < 0.1) {
             y1 = 226;
             y2 = 234;
+            color = ST77XX_WHITE;    
           }
           else {
             
             y1 = 228;
             y2 = 232;
+            color = ST77XX_RED;   
           }
             
             x1 = (int)(10.0 + u * amp_uce);
             x2 = (int)(10.0 + u * amp_uce);
             Serial.printf("(%d, %d), (%d, %d)\n", x1, y1, x2, y2);
-            tft.drawLine(x1, y1, x2, y2, ST77XX_WHITE);
+            tft->drawLine(x1, y1, x2, y2, ST77XX_WHITE);
         }
 
+        //curve
         for (int i = 0; i < curveNum; ++i) {
           for (int j = 0; j < 90; ++j) {
             x1 = (int)(10.0 + uce[i][j] * amp_uce);
@@ -534,14 +582,14 @@ void measureNPN() {
             y1 = (int)(230.0 - ics[i][j] * amp_ics);
             y2 = (int)(230.0 - ics[i][j + 1] * amp_ics);
             //Serial.printf("(%d, %d), (%d, %d)\n", x1, y1, x2, y2);
-            tft.drawLine(x1, y1, x2, y2, ST77XX_WHITE);
+            tft->drawLine(x1, y1, x2, y2, ST77XX_WHITE);
             if (j == 89) {
                 x2 -= 64;
                 y2 += 10;
-                tft.setTextSize(1);
-                tft.setCursor(x2, y2);
-                tft.setTextColor(ST77XX_GREEN);
-                tft.printf("ib: %.*guA", 4, ibs[i] * 1000000);
+                tft->setTextSize(1);
+                tft->setCursor(x2, y2);
+                tft->setTextColor(ST77XX_GREEN);
+                tft->printf("ib: %.*guA", 4, ibs[i] * 1000000);
             }
           }
         }
@@ -639,6 +687,15 @@ void setup() {
 
 componentType component;
 
+#ifdef withDisplay
+
+void drawDynamicTriangle() {
+    static const int vertCount = 3;
+    static const int edgeCount = 3;
+}
+
+#endif
+
 void loop() {
     component = decideComponent();
     switch (component)
@@ -693,15 +750,15 @@ void loop() {
         #ifdef withDisplay
             if (currentMode != None && currentMode != NPN) {
                 currentMode = None;
-                tft.fillScreen(ST77XX_BLACK);
+                tft->fillScreen(ST77XX_BLACK);
 
-                tft.setCursor(50, 60);
-                tft.setTextColor(ST77XX_WHITE);
-                tft.setTextSize(3);
-                tft.printf("NO LOAD.");
+                tft->setCursor(50, 60);
+                tft->setTextColor(ST77XX_WHITE);
+                tft->setTextSize(3);
+                tft->printf("NO LOAD.");
             }
-            else {
-                currentMode = None;
+            else if (currentMode == None) {
+              drawDynamicTriangle();
             }
         #endif
     }
